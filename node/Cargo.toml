@@ -1,0 +1,17 @@
+[package]
+name = "node"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "node"
+path = "src/main.rs"
+
+[dependencies]
+commonware-consensus = { version = "2026.3.0", features = ["mocks"] }
+commonware-cryptography = { version = "2026.3.0" }
+commonware-p2p = { version = "2026.3.0" }
+commonware-runtime = { version = "2026.3.0" }
+commonware-utils = { version = "2026.3.0" }
+commonware-parallel = { version = "2026.3.0" }
+futures = "0.3"
