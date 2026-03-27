@@ -1,24 +1,24 @@
-# Architecture
+# 아키텍처
 
-## Component Wiring
+## 컴포넌트 연결 구조
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  deterministic::Runner  (single-threaded async executor)        │
+│  deterministic::Runner  (단일 스레드 비동기 실행기)              │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  simulated::Network  (in-process p2p, configurable links)│   │
-│  │    Oracle → Control per validator → 3 channel pairs      │   │
+│  │  simulated::Network  (인-프로세스 p2p, 링크 설정 가능)    │   │
+│  │    Oracle → 검증자별 Control → 3개의 채널 쌍              │   │
 │  └───────────────────────┬──────────────────────────────────┘   │
 │                          │ (Sender, Receiver) × 3               │
 │  ┌───────────────────────▼──────────────────────────────────┐   │
-│  │  Validator N (spawned as labeled sub-context)            │   │
+│  │  검증자 N (레이블이 붙은 서브 컨텍스트로 생성)            │   │
 │  │                                                          │   │
 │  │  ┌─────────────┐   propose/verify   ┌────────────────┐  │   │
 │  │  │  Engine     │◄──────────────────►│  Application   │  │   │
-│  │  │  (simplex)  │   relay (blocks)   │  (mock)        │  │   │
+│  │  │  (simplex)  │   relay (블록)     │  (mock)        │  │   │
 │  │  │             │                    └────────┬───────┘  │   │
-│  │  │             │  report activity            │ relay    │   │
+│  │  │             │  활동 보고                  │ relay    │   │
 │  │  │             │──────────────────►┌─────────▼───────┐  │   │
 │  │  │             │                  │  Reporter        │  │   │
 │  │  │             │                  │  (mock)          │  │   │
@@ -26,57 +26,58 @@
 │  └────────────────────────────────────────────│───────────┘   │
 │                                               │ Monitor<View>  │
 │  ┌────────────────────────────────────────────▼───────────┐   │
-│  │  Finalizer (per validator)                              │   │
-│  │  – subscribes to Reporter                               │   │
-│  │  – waits until REQUIRED_BLOCKS views finalized          │   │
+│  │  Finalizer (검증자별)                                    │   │
+│  │  – Reporter를 구독                                       │   │
+│  │  – REQUIRED_BLOCKS 뷰가 확정될 때까지 대기               │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+## 데이터 플로우
 
-### Block Proposal
-1. Engine elects a leader for the current view (RoundRobin)
-2. Engine calls `Automaton::propose()` on the Application mock
-3. Application generates a random 32-byte payload and returns it
-4. Engine broadcasts the proposal to all peers via the `pending` channel
+### 블록 제안
+1. 엔진이 현재 뷰의 리더를 선출 (RoundRobin)
+2. 엔진이 Application mock의 `Automaton::propose()`를 호출
+3. Application이 32바이트 랜덤 페이로드를 생성하여 반환
+4. 엔진이 `pending` 채널을 통해 제안을 모든 피어에 브로드캐스트
 
-### Notarization
-1. Peers receive the proposal via `pending` channel
-2. Engine calls `Automaton::verify()` on each received proposal
-3. If valid, engine signs a notarize vote and broadcasts it
-4. Once Q-quorum (≥80%) of votes are collected, a Notarization certificate is formed
-5. Certificate is broadcast via `recovered` channel
+### Notarization (공증)
+1. 피어들이 `pending` 채널로 제안을 수신
+2. 엔진이 수신한 각 제안에 대해 `Automaton::verify()`를 호출
+3. 유효한 경우, 엔진이 notarize 투표에 서명 후 브로드캐스트
+4. Q-쿼럼(≥80%)의 투표 수집 완료 시 Notarization 인증서 생성
+5. 인증서를 `recovered` 채널로 브로드캐스트
 
-### Finalization
-1. Validators receive the Notarization certificate
-2. Engine signs a finalize vote and broadcasts it
-3. Once Q-quorum of finalize votes are collected, a Finalization certificate is formed
-4. Engine calls `Relay::broadcast()` to deliver the finalized block to the Application
-5. Engine calls `Reporter::report(Activity::Finalization(...))` to notify observers
-6. Reporter's Monitor notifies all subscribers (our finalizer goroutines)
+### Finalization (최종 확정)
+1. 검증자들이 Notarization 인증서 수신
+2. 엔진이 finalize 투표에 서명 후 브로드캐스트
+3. Q-쿼럼의 finalize 투표 수집 완료 시 Finalization 인증서 생성
+4. 엔진이 `Relay::broadcast()`를 호출하여 확정된 블록을 Application에 전달
+5. 엔진이 `Reporter::report(Activity::Finalization(...))`를 호출하여 관찰자에게 알림
+6. Reporter의 Monitor가 모든 구독자(finalizer 태스크들)에게 알림 전송
 
-### View Skipping
-If no notarization is reached within `leader_timeout`, validators send **Nullify** votes.
-L-quorum of nullifies → Nullification certificate → view advances without finalizing a block.
-This is why the output shows gaps (views 1, 4, 8 were nullified in the test run).
+### 뷰 스킵
+`leader_timeout` 내에 notarization이 이루어지지 않으면, 검증자들이 **Nullify** 투표를 전송합니다.
+L-쿼럼의 nullify 수집 → Nullification 인증서 → 블록 확정 없이 뷰 진행
 
-## Shared Relay (`relay::Relay`)
+이것이 실행 결과에서 뷰 번호 간격(view 1, 4, 8이 nullified)이 생기는 이유입니다.
 
-The `relay::Relay<Sha256Digest, Ed25519PublicKey>` is an in-memory store shared across all validators. When a validator's engine finalizes a block, it calls `Relay::broadcast()`, which stores the block so any validator can retrieve it via `Relay::retrieve()`. This simulates the gossip layer that would exist in a real p2p network.
+## 공유 Relay (`relay::Relay`)
 
-## P2P Channels
+`relay::Relay<Sha256Digest, Ed25519PublicKey>`는 모든 검증자가 공유하는 인-메모리 저장소입니다. 검증자의 엔진이 블록을 확정하면 `Relay::broadcast()`를 호출하여 블록을 저장하고, 이후 어느 검증자든 `Relay::retrieve()`로 해당 블록을 조회할 수 있습니다. 이는 실제 p2p 네트워크의 가십 레이어를 시뮬레이션합니다.
 
-Each validator registers 3 channel pairs with the network Oracle:
+## P2P 채널 구조
 
-| ID | Name | Contents |
+각 검증자는 네트워크 Oracle에 3개의 채널 쌍을 등록합니다:
+
+| ID | 이름 | 내용 |
 |---|---|---|
-| 0 | pending (vote) | `Vote` and `Nullify` messages |
-| 1 | recovered (cert) | `Notarization` and `Nullification` certificates |
-| 2 | resolver | Block fetch requests and responses |
+| 0 | pending (vote) | `Vote` 및 `Nullify` 메시지 |
+| 1 | recovered (cert) | `Notarization` 및 `Nullification` 인증서 |
+| 2 | resolver | 블록 fetch 요청 및 응답 |
 
-The simulated network applies configurable per-link latency/jitter/success-rate, making it suitable for testing network partition and degraded connectivity scenarios.
+시뮬레이션 네트워크는 링크별로 지연(latency), 지터(jitter), 성공률(success_rate)을 설정할 수 있어 네트워크 파티션 및 저하된 연결 환경 테스트에 적합합니다.
 
-## Runtime Model
+## 런타임 모델
 
-`deterministic::Runner` runs all tasks on a single thread with a deterministic scheduler. Given the same RNG seed (`deterministic::Config::new()` uses a fixed default seed), the execution is fully reproducible — the same sequence of views will be finalized on every run.
+`deterministic::Runner`는 결정적 스케줄러를 사용하는 단일 스레드에서 모든 태스크를 실행합니다. 동일한 RNG 시드(`deterministic::Config::new()`는 고정된 기본 시드 사용)가 주어지면 실행이 완전히 재현 가능합니다. 즉, 실행할 때마다 동일한 순서로 뷰가 확정됩니다.

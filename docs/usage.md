@@ -1,34 +1,34 @@
-# Usage
+# 사용법
 
-## Prerequisites
+## 사전 요구사항
 
-- Rust 1.75+ (edition 2021)
+- Rust 1.75 이상 (edition 2021)
 - Cargo
 
 ```sh
-# Check your Rust version
+# Rust 버전 확인
 rustc --version
 ```
 
-## Build
+## 빌드
 
 ```sh
-# From the workspace root
+# 워크스페이스 루트에서 실행
 cargo build
 
-# Release build (much faster execution)
+# 릴리즈 빌드 (실행 속도 훨씬 빠름)
 cargo build --release
 ```
 
-## Run
+## 실행
 
 ```sh
 cargo run
-# or
+# 또는
 cargo run --release
 ```
 
-### Expected Output
+### 예상 출력
 
 ```
 [validator_3] finalized view 0
@@ -44,47 +44,47 @@ cargo run --release
 All validators finalized 10 blocks. Consensus works!
 ```
 
-Gaps in view numbers (e.g., view 1 skipped, view 4 skipped) are **expected and correct** — they represent views that were nullified because the leader timed out. Simplex advances without a block in those views.
+뷰 번호 사이의 간격(예: view 1 스킵, view 4 스킵)은 **정상적인 동작입니다.** 리더가 타임아웃되어 해당 뷰가 nullified된 것으로, Simplex는 블록 없이 다음 뷰로 진행합니다.
 
-## Configuration
+## 설정값
 
-All tunable constants are at the top of `node/src/main.rs`:
+모든 조정 가능한 상수는 `node/src/main.rs` 상단에 있습니다:
 
 ```rust
-const NAMESPACE: &[u8] = b"krypto_l1";   // consensus namespace (key derivation)
-const NUM_VALIDATORS: u32 = 4;            // number of validators in the local cluster
-const REQUIRED_BLOCKS: u64 = 10;          // how many blocks to finalize before stopping
+const NAMESPACE: &[u8] = b"krypto_l1";   // 합의 네임스페이스 (키 유도에 사용)
+const NUM_VALIDATORS: u32 = 4;            // 로컬 클러스터의 검증자 수
+const REQUIRED_BLOCKS: u64 = 10;          // 종료 전 확정할 블록 수
 ```
 
-### Network Parameters
+### 네트워크 파라미터
 
-Simulated link settings (in `main.rs` near the link setup):
+`main.rs`의 링크 설정 부분:
 
 ```rust
 let link = Link {
-    latency: Duration::from_millis(10),   // base one-way latency
-    jitter: Duration::from_millis(1),     // random jitter added to latency
-    success_rate: 1.0,                    // 1.0 = no packet loss; 0.9 = 10% drop rate
+    latency: Duration::from_millis(10),   // 기본 단방향 지연시간
+    jitter: Duration::from_millis(1),     // 지연에 추가되는 랜덤 지터
+    success_rate: 1.0,                    // 1.0 = 패킷 손실 없음; 0.9 = 10% 손실
 };
 ```
 
-### Engine Timeouts
+### 엔진 타임아웃
 
-Inside `config::Config` in `main.rs`:
+`main.rs`의 `config::Config` 내부:
 
 ```rust
-leader_timeout:        Duration::from_secs(1),  // time before nullifying a slow leader
-certification_timeout: Duration::from_secs(2),  // time to wait for cert after notarization
-activity_timeout:      Delta::new(10),           // views of inactivity before marking validator offline
-skip_timeout:          Delta::new(5),            // consecutive nullified views before skipping ahead
+leader_timeout:        Duration::from_secs(1),  // 느린 리더 nullify 전 대기 시간
+certification_timeout: Duration::from_secs(2),  // notarization 후 인증서 대기 시간
+activity_timeout:      Delta::new(10),           // 검증자 오프라인 판정까지 비활성 뷰 수
+skip_timeout:          Delta::new(5),            // 뷰 스킵 허용까지 연속 nullify 뷰 수
 ```
 
-## Determinism
+## 결정적 실행
 
-The deterministic runtime uses a fixed RNG seed by default, so every run produces the **same sequence of finalized views**. To randomize:
+결정적 런타임은 기본적으로 고정된 RNG 시드를 사용하므로, 매 실행마다 **동일한 뷰 시퀀스**가 확정됩니다. 랜덤화하려면:
 
 ```rust
-// In main() before executor.start(...)
+// main()에서 executor.start(...) 호출 전에 추가
 use commonware_utils::FuzzRng;
 let rng_seed: u64 = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
@@ -95,28 +95,28 @@ let cfg = deterministic::Config::new()
 let executor = deterministic::Runner::new(cfg);
 ```
 
-## Increasing Validators
+## 검증자 수 늘리기
 
-Change `NUM_VALIDATORS`. Simplex requires ≥4 validators for BFT guarantees (tolerates 1 Byzantine node):
+`NUM_VALIDATORS`를 변경하면 됩니다. BFT 안전성 보장을 위해 최소 4개의 검증자가 필요합니다(비잔틴 노드 1개 허용):
 
-| Validators | Max Byzantine | Min Honest |
+| 검증자 수 | 최대 비잔틴 | 최소 정직 |
 |---|---|---|
-| 4 | 0 (margin only) | 4 |
+| 4 | 0 (여유분만) | 4 |
 | 5 | 1 | 4 |
 | 7 | 1 | 6 |
 | 10 | 2 | 8 |
 
-Simplex requires >80% honest validators for liveness, which is stricter than classical PBFT (>67%).
+Simplex는 활성성을 위해 정직한 검증자 >80%를 요구합니다. 이는 기존 PBFT(>67%)보다 엄격한 조건입니다.
 
-## Enabling Verbose Tracing
+## 상세 트레이싱 활성화
 
-Commonware uses the `tracing` crate internally. Add to `node/Cargo.toml`:
+Commonware는 내부적으로 `tracing` 크레이트를 사용합니다. `node/Cargo.toml`에 추가:
 
 ```toml
 tracing-subscriber = "0.3"
 ```
 
-And at the start of `main()`:
+`main()` 시작 부분에 추가:
 
 ```rust
 tracing_subscriber::fmt()
@@ -124,4 +124,4 @@ tracing_subscriber::fmt()
     .init();
 ```
 
-Then set `RUST_LOG=debug` when running.
+실행 시 `RUST_LOG=debug` 환경변수를 설정하면 내부 로그를 볼 수 있습니다.
