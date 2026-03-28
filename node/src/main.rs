@@ -1,8 +1,10 @@
+mod state_machine;
+
 use commonware_consensus::{
     simplex::{
         config,
         elector::RoundRobin,
-        mocks::{application, relay, reporter},
+        mocks::{relay, reporter},
         scheme::ed25519,
         Engine,
     },
@@ -10,7 +12,7 @@ use commonware_consensus::{
     Monitor,
 };
 use commonware_cryptography::{
-    ed25519::PublicKey as Ed25519PublicKey, sha256::Digest as Sha256Digest, Sha256,
+    ed25519::PublicKey as Ed25519PublicKey, sha256::Digest as Sha256Digest,
 };
 use commonware_p2p::simulated::{
     Config as NetworkConfig, Link, Network, Receiver as P2pReceiver, Sender as P2pSender,
@@ -80,7 +82,7 @@ fn main() {
             }
         }
 
-        // --- Shared in-memory relay for block propagation between validators ---
+        // --- Shared in-memory relay for block content propagation ---
         let shared_relay = Arc::new(relay::Relay::new());
 
         let mut reporters: Vec<(usize, MyReporter)> = Vec::new();
@@ -101,18 +103,13 @@ fn main() {
             let rep: MyReporter =
                 reporter::Reporter::new(ctx.with_label("reporter"), reporter_cfg);
 
-            // Application: proposes and verifies blocks (mock — random payloads)
-            let app_cfg = application::Config {
-                hasher: Sha256::default(),
-                relay: shared_relay.clone(),
-                me: validator.clone(),
-                propose_latency: (10.0, 5.0),
-                verify_latency: (10.0, 5.0),
-                certify_latency: (10.0, 5.0),
-                should_certify: application::Certifier::Sometimes,
-            };
-            let (actor, app) =
-                application::Application::new(ctx.with_label("application"), app_cfg);
+            // Application: real state machine with account balances and token transfers
+            let (actor, app) = state_machine::Application::new(
+                ctx.with_label("application"),
+                validator.clone(),
+                i as u8,
+                shared_relay.clone(),
+            );
             actor.start();
 
             // Engine: runs simplex BFT consensus
@@ -164,6 +161,6 @@ fn main() {
         }
         join_all(finalizers).await;
 
-        println!("All validators finalized {REQUIRED_BLOCKS} blocks. Consensus works!");
+        println!("All validators finalized {REQUIRED_BLOCKS} blocks. State machine works!");
     });
 }

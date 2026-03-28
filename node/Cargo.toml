@@ -10,8 +10,10 @@ path = "src/main.rs"
 [dependencies]
 commonware-consensus = { version = "2026.3.0", features = ["mocks"] }
 commonware-cryptography = { version = "2026.3.0" }
+commonware-macros = { version = "2026.3.0" }
 commonware-p2p = { version = "2026.3.0" }
 commonware-runtime = { version = "2026.3.0" }
 commonware-utils = { version = "2026.3.0" }
 commonware-parallel = { version = "2026.3.0" }
+bytes = "1"
 futures = "0.3"
