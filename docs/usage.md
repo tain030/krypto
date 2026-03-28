@@ -33,18 +33,41 @@ cargo run --release
 ```
 [validator_3] finalized view 0
 [validator_0] finalized view 0
-[validator_2] finalized view 0
-[validator_1] finalized view 0
-[validator_1] finalized view 2
+...
+[validator_0] genesis digest: 136a721b2e0a740757b86600774f20a151da8644a61991a6d24fe46fba44c442
+[validator_1] genesis digest: 136a721b2e0a740757b86600774f20a151da8644a61991a6d24fe46fba44c442
+[validator_2] genesis digest: 136a721b2e0a740757b86600774f20a151da8644a61991a6d24fe46fba44c442
+[validator_3] genesis digest: 136a721b2e0a740757b86600774f20a151da8644a61991a6d24fe46fba44c442
+[validator_1] propose view=1 tx: 1 -> 2 (1 token) digest=72b945...
+[validator_2] verified block view=1 txs=1
+[validator_0] verified block view=1 txs=1
+[validator_3] verified block view=1 txs=1
+[validator_2] finalized view 1
 ...
 [validator_3] ✓ reached 10 finalized blocks
 [validator_2] ✓ reached 10 finalized blocks
 [validator_0] ✓ reached 10 finalized blocks
 [validator_1] ✓ reached 10 finalized blocks
-All validators finalized 10 blocks. Consensus works!
+All validators finalized 10 blocks. State machine works!
 ```
 
-뷰 번호 사이의 간격(예: view 1 스킵, view 4 스킵)은 **정상적인 동작입니다.** 리더가 타임아웃되어 해당 뷰가 nullified된 것으로, Simplex는 블록 없이 다음 뷰로 진행합니다.
+**출력 해석:**
+
+- **genesis digest**: 4개 검증자가 동일한 값을 출력 — 제네시스 상태(계좌 0~3 각 1,000,000 토큰)가 결정론적으로 해시되었음을 확인
+- **propose**: 리더 검증자가 `validator_i → validator_(i+1)%4` 방향으로 1토큰 이체 블록을 제안
+- **verified block**: 나머지 3개 검증자가 블록 내용(뷰, 부모, 잔액 시뮬레이션, 해시)을 검증
+- 뷰 번호 사이의 간격(스킵)은 **정상적인 동작입니다.** 리더 타임아웃으로 해당 뷰가 nullified된 것입니다.
+
+## 상태 머신 상수
+
+계좌 모델은 `node/src/state_machine.rs`에 정의됩니다:
+
+```rust
+pub const NUM_ACCOUNTS: u8 = 4;          // 제네시스 계좌 수 (인덱스 0~3)
+pub const GENESIS_BALANCE: u64 = 1_000_000; // 계좌당 초기 잔액
+```
+
+각 블록은 `validator_i → validator_(i+1)%4` 방향으로 1토큰 이체 트랜잭션 하나를 포함합니다.
 
 ## 설정값
 
